@@ -278,3 +278,47 @@ class TDSConvEncoder(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.tds_conv_blocks(inputs)  # (T, N, num_features)
+
+class ConvRNNEncoder(nn.Module):
+    """A convolutional recurrent encoder.
+
+    Args:
+        num_features (int): ``num_features`` for an input of shape
+            (T, N, num_features).
+        conv_channels (list): A list of integers indicating the number
+            of channels per convolutional block.
+        conv_kernel_width (int): The kernel size of the temporal
+            convolutions in the convolutional blocks.
+        rnn_hidden_size (int): The hidden size of the RNN layer.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        conv_channels: Sequence[int] = (24, 24, 24, 24),
+        conv_kernel_width: int = 32,
+        rnn_hidden_size: int = 512,
+    ) -> None:
+        super().__init__()
+
+        assert len(conv_channels) > 0
+        conv_blocks: list[nn.Module] = []
+        for channels in conv_channels:
+            assert (
+                num_features % channels == 0
+            ), "conv_channels must evenly divide num_features"
+            conv_blocks.append(
+                TDSConv2dBlock(channels, num_features // channels, conv_kernel_width)
+            )
+        self.conv_blocks = nn.Sequential(*conv_blocks)
+
+        self.rnn = nn.LSTM(
+            input_size=num_features,
+            hidden_size=rnn_hidden_size,
+            batch_first=False,
+        )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        x = self.conv_blocks(inputs)  # (T, N, num_features)
+        x, _ = self.rnn(x)  # (T, N, rnn_hidden_size)
+        return x
