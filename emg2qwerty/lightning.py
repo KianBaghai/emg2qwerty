@@ -198,20 +198,6 @@ class TDSConvCTCModule(pl.LightningModule):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
 
-    def configure_optimizers(self) -> dict[str, Any]:
-        return utils.instantiate_optimizer_and_scheduler(
-            self.parameters(),
-            optimizer_config=self.optimizer_config,
-            lr_scheduler_config=self.lr_scheduler_config,
-        )
-
-    def configure_optimizers(self) -> dict[str, Any]:
-        return utils.instantiate_optimizer_and_scheduler(
-            self.parameters(),
-            optimizer_config=self.optimizer_config,
-            lr_scheduler_config=self.lr_scheduler_config,
-        )
-
     def _step(
         self, phase: str, batch: dict[str, torch.Tensor], *args, **kwargs
     ) -> torch.Tensor:
