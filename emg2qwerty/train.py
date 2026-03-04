@@ -55,6 +55,8 @@ def main(config: DictConfig):
 
     # Instantiate LightningModule
     log.info(f"Instantiating LightningModule {config.module}")
+    module_kwargs = OmegaConf.to_container(config.module, resolve=True)
+    module_kwargs.pop("_target_", None)
     module = instantiate(
         config.module,
         optimizer=config.optimizer,
@@ -66,6 +68,7 @@ def main(config: DictConfig):
         log.info(f"Loading module from checkpoint {config.checkpoint}")
         module = module.load_from_checkpoint(
             config.checkpoint,
+            **module_kwargs,
             optimizer=config.optimizer,
             lr_scheduler=config.lr_scheduler,
             decoder=config.decoder,
@@ -108,7 +111,11 @@ def main(config: DictConfig):
 
         # Load best checkpoint
         module = module.load_from_checkpoint(
-            trainer.checkpoint_callback.best_model_path
+            trainer.checkpoint_callback.best_model_path,
+            **module_kwargs,
+            optimizer=config.optimizer,
+            lr_scheduler=config.lr_scheduler,
+            decoder=config.decoder,
         )
 
     # Validate and test on the best checkpoint (if training), or on the
