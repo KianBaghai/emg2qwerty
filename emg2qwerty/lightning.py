@@ -275,8 +275,22 @@ class TDSConvCTCModule(pl.LightningModule):
             lr_scheduler_config=self.hparams.lr_scheduler,
         )
 
-class ConvRNNCTCModule(TDSConvCTCModule):
-    """CTC-based EMG-to-QWERTY module using a Conv+RNN encoder instead of TDSConvEncoder."""
+class ConvRNNCTCModule(pl.LightningModule):
+    '''
+    A LightningModule implementing a CNN+RNN architecture with CTC loss for EMG-to-QWERTY decoding. The architecture consists of a SpectrogramNorm layer, followed by a MultiBandRotationInvariantMLP, a ConvRNNEncoder, and a final linear layer projecting to character classes. The module also includes CTC loss computation and decoding logic, as well as metric tracking for character error rates during training, validation, and testing.
+    Args:        
+        in_features (int): Number of input features per electrode channel in the spectrogram.
+        mlp_features (Sequence[int]): Sequence of hidden layer sizes for the MultiBandRotationInvariantMLP.
+        conv_channels (Sequence[int]): Sequence of output channel sizes for each convolutional block in the ConvRNNEncoder.
+        conv_kernel_width (int): Kernel width for the convolutional layers in the ConvRNNEncoder.
+        rnn_hidden_size (int): Hidden size for the RNN layers in the ConvRNNEncoder.
+        optimizer (DictConfig): Configuration for the optimizer to be used in training.
+        lr_scheduler (DictConfig): Configuration for the learning rate scheduler to be used in training.
+        decoder (DictConfig): Configuration for the decoder to be used for decoding model outputs during evaluation. The decoder should implement a `decode_batch` method that takes in emissions and their lengths and returns decoded predictions.
+    -
+    '''
+    NUM_BANDS: ClassVar[int] = 2
+    ELECTRODE_CHANNELS: ClassVar[int] = 16
 
     def __init__(
         self,
@@ -288,21 +302,12 @@ class ConvRNNCTCModule(TDSConvCTCModule):
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
         decoder: DictConfig,
-    ) -> None:
-        # Call parent to set up CTC loss, decoder, metrics, and base hyperparameters
-        super().__init__(
-            in_features=in_features,
-            mlp_features=mlp_features,
-            block_channels=[],  # We'll override encoder anyway
-            kernel_width=conv_kernel_width,
-            optimizer=optimizer,
-            lr_scheduler=lr_scheduler,
-            decoder=decoder,
-        )
+    ):
+        super().__init__()
+        self.save_hyperparameters()
 
+        # Model
         num_features = self.NUM_BANDS * mlp_features[-1]
-
-        # Replace TDSConvEncoder with ConvRNNEncoder
         self.model = nn.Sequential(
             SpectrogramNorm(channels=self.NUM_BANDS * self.ELECTRODE_CHANNELS),
             MultiBandRotationInvariantMLP(
@@ -321,8 +326,84 @@ class ConvRNNCTCModule(TDSConvCTCModule):
             nn.LogSoftmax(dim=-1),
         )
 
-        # Optimizer/lr_scheduler are stored in hparams already by parent
-        # Metrics and CTC loss are reused from parent
+        # Criterion
+        self.ctc_loss = nn.CTCLoss(blank=charset().null_class)
 
-    # No need to override forward — parent already does:
-    # def forward(self, inputs): return self.model(inputs)
+        # Decoder
+        self.decoder = instantiate(decoder)
+
+        # Metrics
+        metrics = MetricCollection([CharacterErrorRates()])
+        self.metrics = nn.ModuleDict(
+            {f"{phase}_metrics": metrics.clone(prefix=f"{phase}/")
+             for phase in ["train", "val", "test"]}
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
+
+    def _step(self, phase: str, batch: dict[str, torch.Tensor]):
+        inputs = batch["inputs"]
+        targets = batch["targets"]
+        input_lengths = batch["input_lengths"]
+        target_lengths = batch["target_lengths"]
+        N = len(input_lengths)
+
+        emissions = self.forward(inputs)
+        T_diff = inputs.shape[0] - emissions.shape[0]
+        emission_lengths = input_lengths - T_diff
+
+        loss = self.ctc_loss(
+            log_probs=emissions,
+            targets=targets.transpose(0, 1),
+            input_lengths=emission_lengths,
+            target_lengths=target_lengths,
+        )
+
+        # Decode emissions
+        predictions = self.decoder.decode_batch(
+            emissions=emissions.detach().cpu().numpy(),
+            emission_lengths=emission_lengths.detach().cpu().numpy(),
+        )
+
+        # Update metrics
+        metrics = self.metrics[f"{phase}_metrics"]
+        targets = targets.detach().cpu().numpy()
+        target_lengths = target_lengths.detach().cpu().numpy()
+        for i in range(N):
+            target = LabelData.from_labels(targets[:target_lengths[i], i])
+            metrics.update(prediction=predictions[i], target=target)
+
+        self.log(f"{phase}/loss", loss, batch_size=N, sync_dist=True)
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        return self._step("train", batch)
+
+    def validation_step(self, batch, batch_idx):
+        return self._step("val", batch)
+
+    def test_step(self, batch, batch_idx):
+        return self._step("test", batch)
+
+    def on_train_epoch_end(self):
+        metrics = self.metrics["train_metrics"]
+        self.log_dict(metrics.compute(), sync_dist=True)
+        metrics.reset()
+
+    def on_validation_epoch_end(self):
+        metrics = self.metrics["val_metrics"]
+        self.log_dict(metrics.compute(), sync_dist=True)
+        metrics.reset()
+
+    def on_test_epoch_end(self):
+        metrics = self.metrics["test_metrics"]
+        self.log_dict(metrics.compute(), sync_dist=True)
+        metrics.reset()
+
+    def configure_optimizers(self):
+        return utils.instantiate_optimizer_and_scheduler(
+            self.parameters(),
+            optimizer_config=self.hparams.optimizer,
+            lr_scheduler_config=self.hparams.lr_scheduler,
+        )
