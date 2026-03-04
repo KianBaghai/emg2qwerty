@@ -155,6 +155,10 @@ class TDSConvCTCModule(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        # Store optimizer configs for configure_optimizers
+        self.optimizer_config = optimizer
+        self.lr_scheduler_config = lr_scheduler
+
         num_features = self.NUM_BANDS * mlp_features[-1]
 
         # Model
