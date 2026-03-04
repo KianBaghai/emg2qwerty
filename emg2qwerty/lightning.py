@@ -271,9 +271,9 @@ class TDSConvCTCModule(pl.LightningModule):
             lr_scheduler_config=self.hparams.lr_scheduler,
         )
 
-class ConvRNNCTCModule(TDSConvCTCModule): # Inherit from TDSConvCTCModule since the only difference is the encoder architecture, which is modularized within TDSConvEncoder and ConvRNNEncoder
-    NUM_BANDS = 2
-    ELECTRODE_CHANNELS = 16
+class ConvRNNCTCModule(TDSConvCTCModule):
+    """CTC-based EMG-to-QWERTY module using a Conv+RNN encoder instead of TDSConvEncoder."""
+
     def __init__(
         self,
         in_features: int,
@@ -285,54 +285,40 @@ class ConvRNNCTCModule(TDSConvCTCModule): # Inherit from TDSConvCTCModule since 
         lr_scheduler: DictConfig,
         decoder: DictConfig,
     ) -> None:
-        # Don't call super().__init__ because it builds the TDS stack.
-        pl.LightningModule.__init__(self)
-        self.save_hyperparameters()
-
-        # Store optimizer/lr configs explicitly to avoid missing hparam keys
-        # when bypassing the parent __init__.
-        self.optimizer_config = optimizer
-        self.lr_scheduler_config = lr_scheduler
+        # Call parent to set up CTC loss, decoder, metrics, and base hyperparameters
+        super().__init__(
+            in_features=in_features,
+            mlp_features=mlp_features,
+            block_channels=[],  # We'll override encoder anyway
+            kernel_width=conv_kernel_width,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            decoder=decoder,
+        )
 
         num_features = self.NUM_BANDS * mlp_features[-1]
 
-        # Model
-        # inputs: (T, N, bands=2, electrode_channels=16, freq)
+        # Replace TDSConvEncoder with ConvRNNEncoder
         self.model = nn.Sequential(
-            # (T, N, bands=2, C=16, freq)
             SpectrogramNorm(channels=self.NUM_BANDS * self.ELECTRODE_CHANNELS),
-            # (T, N, bands=2, mlp_features[-1])
             MultiBandRotationInvariantMLP(
                 in_features=in_features,
                 mlp_features=mlp_features,
                 num_bands=self.NUM_BANDS,
             ),
-            # (T, N, num_features)
             nn.Flatten(start_dim=2),
-            # (T, N, num_features)
-            ConvRNNEncoder(num_features=num_features,
-                           conv_channels=conv_channels,
-                           conv_kernel_width=conv_kernel_width,
-                           rnn_hidden_size=rnn_hidden_size),
-            # (T, N, num_classes)
+            ConvRNNEncoder(
+                num_features=num_features,
+                conv_channels=conv_channels,
+                conv_kernel_width=conv_kernel_width,
+                rnn_hidden_size=rnn_hidden_size,
+            ),
             nn.Linear(rnn_hidden_size, charset().num_classes),
             nn.LogSoftmax(dim=-1),
         )
 
-        # Criterion
-        self.ctc_loss = nn.CTCLoss(blank=charset().null_class)
+        # Optimizer/lr_scheduler are stored in hparams already by parent
+        # Metrics and CTC loss are reused from parent
 
-        # Decoder
-        self.decoder = instantiate(decoder)
-
-        # Metrics
-        metrics = MetricCollection([CharacterErrorRates()])
-        self.metrics = nn.ModuleDict(
-            {
-                f"{phase}_metrics": metrics.clone(prefix=f"{phase}/")
-                for phase in ["train", "val", "test"]
-            }
-        )
-    
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.model(inputs)
+    # No need to override forward — parent already does:
+    # def forward(self, inputs): return self.model(inputs)
