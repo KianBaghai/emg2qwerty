@@ -290,6 +290,8 @@ class ConvRNNEncoder(nn.Module):
         conv_kernel_width (int): The kernel size of the temporal
             convolutions in the convolutional blocks.
         rnn_hidden_size (int): The hidden size of the RNN layer.
+        rnn_layers (int): Number of stacked RNN layers.
+        dropout (float): Dropout between RNN layers (ignored if rnn_layers == 1).
     """
 
     def __init__(
@@ -298,6 +300,8 @@ class ConvRNNEncoder(nn.Module):
         conv_channels: Sequence[int] = (24, 24, 24, 24),
         conv_kernel_width: int = 32,
         rnn_hidden_size: int = 512,
+        rnn_layers: int = 1,
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
 
@@ -315,6 +319,8 @@ class ConvRNNEncoder(nn.Module):
         self.rnn = nn.LSTM(
             input_size=num_features,
             hidden_size=rnn_hidden_size,
+            num_layers=rnn_layers,
+            dropout=dropout if rnn_layers > 1 else 0.0,
             batch_first=False,
         )
 

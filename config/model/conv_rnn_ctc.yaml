@@ -6,6 +6,8 @@ module:
   conv_channels: [24, 24, 24, 24]
   conv_kernel_width: 32 # Total temporal receptive field of 125 samples given 4
   rnn_hidden_size: 512
+  rnn_layers: 1
+  dropout: 0.0
 
 datamodule:
   _target_: emg2qwerty.lightning.WindowedEMGDataModule
