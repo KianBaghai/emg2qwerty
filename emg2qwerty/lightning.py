@@ -198,6 +198,13 @@ class TDSConvCTCModule(pl.LightningModule):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.model(inputs)
 
+    def configure_optimizers(self) -> dict[str, Any]:
+        return utils.instantiate_optimizer_and_scheduler(
+            self.parameters(),
+            optimizer_config=self.optimizer_config,
+            lr_scheduler_config=self.lr_scheduler_config,
+        )
+
     def _step(
         self, phase: str, batch: dict[str, torch.Tensor], *args, **kwargs
     ) -> torch.Tensor:
@@ -288,6 +295,11 @@ class ConvRNNCTCModule(TDSConvCTCModule): # Inherit from TDSConvCTCModule since 
         # Don't call super().__init__ because it builds the TDS stack.
         pl.LightningModule.__init__(self)
         self.save_hyperparameters()
+
+        # Store optimizer/lr configs explicitly to avoid missing hparam keys
+        # when bypassing the parent __init__.
+        self.optimizer_config = optimizer
+        self.lr_scheduler_config = lr_scheduler
 
         num_features = self.NUM_BANDS * mlp_features[-1]
 
