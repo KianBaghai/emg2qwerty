@@ -43,6 +43,50 @@ class ToTensor:
 
 
 @dataclass
+class ChannelMask:
+    """Zeros out all electrode channels except those in ``keep``.
+
+    Keeps tensor shape unchanged so downstream modules (e.g., SpectrogramNorm
+    expecting a fixed channel count) continue to work. Use this to simulate
+    removing electrodes without touching model dimensions.
+
+    Args:
+        keep (Sequence[int]): Indices of channels to retain.
+        fill_value (float): Value to write into dropped channels. (default: 0.)
+        channel_dim (int): Dimension containing the electrode channels. For
+            tensors produced by ``ToTensor`` this is ``-1`` (shape T x bands x C).
+    """
+
+    keep: Sequence[int]
+    fill_value: float = 0.0
+    channel_dim: int = -1
+
+    def __post_init__(self) -> None:
+        # Ensure uniqueness and validity of channel indices
+        uniq = sorted(set(self.keep))
+        if len(uniq) == 0:
+            raise ValueError("ChannelMask.keep cannot be empty")
+        self.keep = uniq
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        channels = tensor.shape[self.channel_dim]
+        if max(self.keep) >= channels or min(self.keep) < 0:
+            raise IndexError(
+                f"Channel indices {self.keep} are out of bounds for {channels} channels"
+            )
+
+        mask = torch.zeros(channels, device=tensor.device, dtype=tensor.dtype)
+        mask[self.keep] = 1.0
+
+        # Reshape mask for broadcasting on the specified channel dimension
+        view_shape = [1] * tensor.dim()
+        view_shape[self.channel_dim] = channels
+        mask = mask.view(*view_shape)
+
+        return tensor * mask + (1 - mask) * self.fill_value
+
+
+@dataclass
 class Lambda:
     """Applies a custom lambda function as a transform.
 
