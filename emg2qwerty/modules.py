@@ -292,6 +292,7 @@ class ConvRNNEncoder(nn.Module):
         rnn_hidden_size (int): The hidden size of the RNN layer.
         rnn_layers (int): Number of stacked RNN layers.
         dropout (float): Dropout between RNN layers (ignored if rnn_layers == 1).
+        rnn_type (str): Which recurrent cell to use: \"lstm\" or \"gru\". (default: \"lstm\")
     """
 
     def __init__(
@@ -302,6 +303,7 @@ class ConvRNNEncoder(nn.Module):
         rnn_hidden_size: int = 512,
         rnn_layers: int = 1,
         dropout: float = 0.0,
+        rnn_type: str = "lstm",
     ) -> None:
         super().__init__()
 
@@ -316,7 +318,11 @@ class ConvRNNEncoder(nn.Module):
             )
         self.conv_blocks = nn.Sequential(*conv_blocks)
 
-        self.rnn = nn.LSTM(
+        rnn_type = rnn_type.lower()
+        assert rnn_type in {"lstm", "gru"}, "rnn_type must be 'lstm' or 'gru'"
+        rnn_cls = nn.LSTM if rnn_type == "lstm" else nn.GRU
+
+        self.rnn = rnn_cls(
             input_size=num_features,
             hidden_size=rnn_hidden_size,
             num_layers=rnn_layers,
