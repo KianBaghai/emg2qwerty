@@ -293,6 +293,7 @@ class ConvRNNEncoder(nn.Module):
         rnn_layers (int): Number of stacked RNN layers.
         dropout (float): Dropout between RNN layers (ignored if rnn_layers == 1).
         rnn_type (str): Which recurrent cell to use: \"lstm\" or \"gru\". (default: \"lstm\")
+        bidirectional (bool): Whether to use a bidirectional recurrent layer.
     """
 
     def __init__(
@@ -304,6 +305,7 @@ class ConvRNNEncoder(nn.Module):
         rnn_layers: int = 1,
         dropout: float = 0.0,
         rnn_type: str = "lstm",
+        bidirectional: bool = False,
     ) -> None:
         super().__init__()
 
@@ -327,10 +329,12 @@ class ConvRNNEncoder(nn.Module):
             hidden_size=rnn_hidden_size,
             num_layers=rnn_layers,
             dropout=dropout if rnn_layers > 1 else 0.0,
+            bidirectional=bidirectional,
             batch_first=False,
         )
+        self.output_features = rnn_hidden_size * (2 if bidirectional else 1)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         x = self.conv_blocks(inputs)  # (T, N, num_features)
-        x, _ = self.rnn(x)  # (T, N, rnn_hidden_size)
+        x, _ = self.rnn(x)  # (T, N, output_features)
         return x

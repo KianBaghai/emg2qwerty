@@ -284,6 +284,7 @@ class ConvRNNCTCModule(pl.LightningModule):
         conv_channels (Sequence[int]): Sequence of output channel sizes for each convolutional block in the ConvRNNEncoder.
         conv_kernel_width (int): Kernel width for the convolutional layers in the ConvRNNEncoder.
         rnn_hidden_size (int): Hidden size for the RNN layers in the ConvRNNEncoder.
+        rnn_bidirectional (bool): Whether to use a bidirectional recurrent encoder.
         optimizer (DictConfig): Configuration for the optimizer to be used in training.
         lr_scheduler (DictConfig): Configuration for the learning rate scheduler to be used in training.
         decoder (DictConfig): Configuration for the decoder to be used for decoding model outputs during evaluation. The decoder should implement a `decode_batch` method that takes in emissions and their lengths and returns decoded predictions.
@@ -305,6 +306,7 @@ class ConvRNNCTCModule(pl.LightningModule):
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
         decoder: DictConfig,
+        rnn_bidirectional: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -327,8 +329,12 @@ class ConvRNNCTCModule(pl.LightningModule):
                 rnn_layers=rnn_layers,
                 dropout=dropout,
                 rnn_type=rnn_type,
+                bidirectional=rnn_bidirectional,
             ),
-            nn.Linear(rnn_hidden_size, charset().num_classes),
+            nn.Linear(
+                rnn_hidden_size * (2 if rnn_bidirectional else 1),
+                charset().num_classes,
+            ),
             nn.LogSoftmax(dim=-1),
         )
 
