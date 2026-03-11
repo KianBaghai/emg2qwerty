@@ -1,0 +1,53 @@
+# @package _global_
+to_tensor:
+  _target_: emg2qwerty.transforms.ToTensor
+  fields: [emg_left, emg_right]
+
+standardize:
+  _target_: emg2qwerty.transforms.Standardize
+  dims: [0] # Normalize each band/channel independently over time.
+  eps: 1.0e-5
+
+band_rotation:
+  _target_: emg2qwerty.transforms.ForEach # i.i.d rotation offset for each band.
+  transform:
+    _target_: emg2qwerty.transforms.RandomBandRotation
+    offsets: [-1, 0, 1]
+
+temporal_jitter:
+  _target_: emg2qwerty.transforms.TemporalAlignmentJitter
+  max_offset: 80 # Lighter left/right misalignment for pretraining.
+
+logspec:
+  _target_: emg2qwerty.transforms.LogSpectrogram
+  n_fft: 64
+  hop_length: 16
+
+specaug:
+  _target_: emg2qwerty.transforms.SpecAugment
+  n_time_masks: 2
+  time_mask_param: 20
+  n_freq_masks: 1
+  freq_mask_param: 3
+
+channel_mask:
+  _target_: emg2qwerty.transforms.ChannelMask
+  keep: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+  fill_value: 0.0
+  channel_dim: -1
+
+transforms:
+  train:
+    - ${to_tensor}
+    - ${standardize}
+    - ${band_rotation}
+    - ${temporal_jitter}
+    - ${logspec}
+    - ${specaug}
+    - ${channel_mask}
+  val:
+    - ${to_tensor}
+    - ${standardize}
+    - ${logspec}
+    - ${channel_mask}
+  test: ${transforms.val}
