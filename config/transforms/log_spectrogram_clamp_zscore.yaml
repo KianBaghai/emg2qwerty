@@ -1,0 +1,35 @@
+# @package _global_
+to_tensor:
+  _target_: emg2qwerty.transforms.ToTensor
+  fields: [emg_left, emg_right]
+
+clamp:
+  _target_: emg2qwerty.transforms.Clamp
+  min_value: -5.0
+  max_value: 5.0
+
+standardize:
+  _target_: emg2qwerty.transforms.Standardize
+  dims: [0] # Clip first, then normalize each band/channel over time.
+  eps: 1.0e-5
+
+logspec:
+  _target_: emg2qwerty.transforms.LogSpectrogram
+  n_fft: 64
+  hop_length: 16
+
+channel_mask:
+  _target_: emg2qwerty.transforms.ChannelMask
+  keep: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+  fill_value: 0.0
+  channel_dim: -1
+
+transforms:
+  train:
+    - ${to_tensor}
+    - ${clamp}
+    - ${standardize}
+    - ${logspec}
+    - ${channel_mask}
+  val: ${transforms.train}
+  test: ${transforms.train}

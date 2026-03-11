@@ -43,6 +43,84 @@ class ToTensor:
 
 
 @dataclass
+class Standardize:
+    """Applies z-score normalization over the specified dimensions.
+
+    Useful for normalizing raw EMG amplitudes before spectrogram extraction.
+
+    Args:
+        dims (Sequence[int]): Dimensions over which to compute mean and std.
+        eps (float): Numerical stability constant added to the denominator.
+    """
+
+    dims: Sequence[int] = (0,)
+    eps: float = 1e-5
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        dims = tuple(sorted(self.dims))
+        mean = tensor.mean(dim=dims, keepdim=True)
+        std = tensor.std(dim=dims, keepdim=True, unbiased=False)
+        return (tensor - mean) / std.clamp_min(self.eps)
+
+
+@dataclass
+class Clamp:
+    """Clamps tensor values to a fixed numeric range.
+
+    Useful for limiting outlier amplitudes before further preprocessing.
+
+    Args:
+        min_value (float): Lower clipping bound.
+        max_value (float): Upper clipping bound.
+    """
+
+    min_value: float
+    max_value: float
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        return tensor.clamp(min=self.min_value, max=self.max_value)
+
+
+@dataclass
+class RobustStandardize:
+    """Applies robust normalization using median and median absolute deviation.
+
+    This is less sensitive to high-amplitude EMG outliers than standard z-score
+    normalization.
+
+    Args:
+        dims (Sequence[int]): Dimensions over which to compute statistics.
+        eps (float): Numerical stability constant added to the denominator.
+    """
+
+    dims: Sequence[int] = (0,)
+    eps: float = 1e-5
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        dims = tuple(sorted(self.dims))
+        if len(dims) == 0:
+            raise ValueError("RobustStandardize.dims cannot be empty")
+
+        permute_order = [dim for dim in range(tensor.dim()) if dim not in dims] + list(dims)
+        x = tensor.permute(permute_order)
+
+        kept_ndim = tensor.dim() - len(dims)
+        kept_shape = x.shape[:kept_ndim]
+        reduced_shape = x.shape[kept_ndim:]
+        x = x.reshape(*kept_shape, int(np.prod(reduced_shape)))
+
+        median = x.median(dim=-1, keepdim=True).values
+        mad = (x - median).abs().median(dim=-1, keepdim=True).values
+        x = (x - median) / mad.clamp_min(self.eps)
+        x = x.reshape(*kept_shape, *reduced_shape)
+
+        inverse_permute = [0] * tensor.dim()
+        for index, dim in enumerate(permute_order):
+            inverse_permute[dim] = index
+        return x.permute(inverse_permute)
+
+
+@dataclass
 class ChannelMask:
     """Zeros out all electrode channels except those in ``keep``.
 
