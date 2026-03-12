@@ -342,30 +342,33 @@ class ConvRNNEncoder(nn.Module):
 
 class PositionalEncoding(nn.Module):
     """Sinusoidal positional encoding for transformer sequences.
+    Computes encoding for the actual sequence length in forward so that
+    arbitrarily long sequences (e.g. full sessions at test time) are supported.
 
     Args:
         d_model (int): Model dimension (must be even).
-        max_len (int): Maximum sequence length to precompute.
         dropout (float): Dropout applied after adding positional encoding.
     """
 
-    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1) -> None:
+    def __init__(self, d_model: int, dropout: float = 0.1) -> None:
         super().__init__()
+        self.d_model = d_model
         self.dropout = nn.Dropout(p=dropout)
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (T, N, d_model) — compute pe for actual length T
+        T = x.size(0)
+        device = x.device
+        pe = torch.zeros(T, self.d_model, device=device, dtype=x.dtype)
+        position = torch.arange(0, T, device=device, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
-            torch.arange(0, d_model, 2).float()
-            * (-torch.log(torch.tensor(10000.0)) / d_model)
+            torch.arange(0, self.d_model, 2, device=device).float()
+            * (-torch.log(torch.tensor(10000.0, device=device)) / self.d_model)
         )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(1)  # (max_len, 1, d_model)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (T, N, d_model)
-        x = x + self.pe[: x.size(0)]
+        pe = pe.unsqueeze(1)  # (T, 1, d_model)
+        x = x + pe
         return self.dropout(x)
 
 
@@ -398,7 +401,7 @@ class TransformerEncoder(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.input_proj = nn.Linear(num_features, d_model)
-        self.pos_encoder = PositionalEncoding(d_model, max_len=max_len, dropout=dropout)
+        self.pos_encoder = PositionalEncoding(d_model, dropout=dropout)
         layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
