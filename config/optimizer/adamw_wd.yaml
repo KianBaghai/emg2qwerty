@@ -1,0 +1,6 @@
+# @package _global_
+# AdamW with weight decay for stronger regularization (e.g. Transformer).
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1e-3
+  weight_decay: 0.01

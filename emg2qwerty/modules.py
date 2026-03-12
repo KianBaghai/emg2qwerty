@@ -401,6 +401,7 @@ class TransformerEncoder(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.input_proj = nn.Linear(num_features, d_model)
+        self.input_dropout = nn.Dropout(p=dropout)
         self.pos_encoder = PositionalEncoding(d_model, dropout=dropout)
         layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -415,7 +416,7 @@ class TransformerEncoder(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # inputs: (T, N, num_features)
-        x = self.input_proj(inputs)  # (T, N, d_model)
+        x = self.input_dropout(self.input_proj(inputs))  # (T, N, d_model)
         x = self.pos_encoder(x)
         x = self.transformer_encoder(x)  # (T, N, d_model)
         return x

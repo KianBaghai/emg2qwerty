@@ -7,8 +7,9 @@ module:
   nhead: 8
   num_encoder_layers: 4
   dim_feedforward: 1024
-  dropout: 0.1
+  dropout: 0.25  # stronger regularization to reduce overfitting (val vs test CER gap)
   max_len: 5000
+# Optional: use optimizer=adamw_wd for weight decay (e.g. python -m emg2qwerty.train model=transformer_ctc optimizer=adamw_wd)
 
 datamodule:
   _target_: emg2qwerty.lightning.WindowedEMGDataModule
