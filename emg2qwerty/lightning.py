@@ -465,7 +465,6 @@ class TransformerCTCModule(pl.LightningModule):
                 dropout=dropout,
                 max_len=max_len,
             ),
-            nn.Dropout(p=dropout),
             nn.Linear(d_model, charset().num_classes),
             nn.LogSoftmax(dim=-1),
         )

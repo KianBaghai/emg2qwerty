@@ -7,9 +7,8 @@ module:
   nhead: 8
   num_encoder_layers: 4
   dim_feedforward: 1024
-  dropout: 0.2   # balance: reduce overfitting (test CER) without hurting val CER
+  dropout: 0.1
   max_len: 5000
-# For lower CER: try optimizer=adamw_wd and/or decoder=ctc_beam at test time
 
 datamodule:
   _target_: emg2qwerty.lightning.WindowedEMGDataModule
