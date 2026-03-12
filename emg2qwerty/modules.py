@@ -338,3 +338,81 @@ class ConvRNNEncoder(nn.Module):
         x = self.conv_blocks(inputs)  # (T, N, num_features)
         x, _ = self.rnn(x)  # (T, N, output_features)
         return x
+
+
+class PositionalEncoding(nn.Module):
+    """Sinusoidal positional encoding for transformer sequences.
+
+    Args:
+        d_model (int): Model dimension (must be even).
+        max_len (int): Maximum sequence length to precompute.
+        dropout (float): Dropout applied after adding positional encoding.
+    """
+
+    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1) -> None:
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float()
+            * (-torch.log(torch.tensor(10000.0)) / d_model)
+        )
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(1)  # (max_len, 1, d_model)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (T, N, d_model)
+        x = x + self.pe[: x.size(0)]
+        return self.dropout(x)
+
+
+class TransformerEncoder(nn.Module):
+    """Transformer encoder for sequential sEMG features.
+
+    Expects input (T, N, num_features) and returns (T, N, d_model).
+    Uses standard sinusoidal positional encoding and PyTorch TransformerEncoder.
+
+    Args:
+        num_features (int): Input feature dimension (from MLP front-end).
+        d_model (int): Transformer hidden dimension (must be even for positional encoding).
+        nhead (int): Number of attention heads.
+        num_layers (int): Number of transformer encoder layers.
+        dim_feedforward (int): FFN hidden dimension (typically 4 * d_model).
+        dropout (float): Dropout applied in encoder layers and positional encoding.
+        max_len (int): Maximum sequence length for positional encoding.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        dim_feedforward: int = 2048,
+        dropout: float = 0.1,
+        max_len: int = 5000,
+    ) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.input_proj = nn.Linear(num_features, d_model)
+        self.pos_encoder = PositionalEncoding(d_model, max_len=max_len, dropout=dropout)
+        layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation="relu",
+            batch_first=False,
+            norm_first=False,
+        )
+        self.transformer_encoder = nn.TransformerEncoder(layer, num_layers=num_layers)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        # inputs: (T, N, num_features)
+        x = self.input_proj(inputs)  # (T, N, d_model)
+        x = self.pos_encoder(x)
+        x = self.transformer_encoder(x)  # (T, N, d_model)
+        return x
